@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mb-24">
+  <div class="text-2xl font-semibold mb-4">History</div>
+  <div class="space-y-4">
+    {% for r in rows %}
+    <div class="rounded-2xl border bg-white p-4 flex items-center justify-between">
+      <div class="flex items-center gap-4">
+        <div class="h-16 w-24 rounded-lg bg-emerald-50 flex items-center justify-center">🍽️</div>
+        <div>
+          <div class="font-semibold">{{ r.name }}</div>
+          <div class="text-sm text-gray-500">{{ r.cuisine or '—' }} • {{ r.time_min or 0 }}m</div>
+          <div class="flex items-center gap-2 mt-1">
+            {% if r.is_override %}<span class="px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs">Override</span>{% else %}<span class="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs">Cooked</span>{% endif %}
+            <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">{{ r.time_min or 0 }}m</span>
+          </div>
+        </div>
+      </div>
+      <div class="text-sm text-gray-600">{{ r.cooked_date.strftime('%-m/%-d/%Y') if r.cooked_date else '' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="rounded-2xl border bg-emerald-50 text-emerald-900 p-4 mt-6 grid grid-cols-4 text-center">
+    <div><div class="text-2xl font-semibold">{{ rows|length }}</div><div class="text-sm">Total Meals</div></div>
+    <div><div class="text-2xl font-semibold">{{ rows|selectattr('is_override')|list|length }}</div><div class="text-sm">Overrides</div></div>
+    <div><div class="text-2xl font-semibold">{{ rows|map(attribute='cuisine')|unique|list|length }}</div><div class="text-sm">Cuisines</div></div>
+    <div><div class="text-2xl font-semibold">{{ rows|map(attribute='time_min')|list|sum }}</div><div class="text-sm">Total Min</div></div>
+  </div>
+</div>
+{% endblock %}

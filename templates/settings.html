@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mb-24 grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <div class="rounded-2xl border bg-white p-6">
+    <div class="text-lg font-semibold mb-4">Profile & Preferences</div>
+    <form method="post" class="space-y-3">
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-sm text-gray-600">Dietary</label>
+          <select name="diet" class="w-full rounded-xl border px-3 py-2">
+            <option {% if prefs.diet=='None' %}selected{% endif %}>None</option>
+            <option {% if prefs.diet=='Veg' %}selected{% endif %}>Veg</option>
+            <option {% if prefs.diet=='Vegan' %}selected{% endif %}>Vegan</option>
+          </select>
+        </div>
+        <div>
+          <label class="text-sm text-gray-600">Spice</label>
+          <select name="spice_level" class="w-full rounded-xl border px-3 py-2">
+            <option {% if prefs.spice_level=='Low' %}selected{% endif %}>Low</option>
+            <option {% if prefs.spice_level=='Medium' %}selected{% endif %}>Medium</option>
+            <option {% if prefs.spice_level=='High' %}selected{% endif %}>High</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="text-sm text-gray-600">Time Max</label>
+          <input type="number" name="time_max" value="{{ prefs.time_max }}" class="w-full rounded-xl border px-3 py-2">
+        </div>
+        <div>
+          <label class="text-sm text-gray-600">Notification Time</label>
+          <input type="time" name="notify_time" value="{{ prefs.notify_time }}" class="w-full rounded-xl border px-3 py-2">
+        </div>
+      </div>
+      <div class="text-sm text-gray-600">Cooldown: {{ cooldown }} days</div>
+      <button class="rounded-xl bg-emerald-600 text-white px-5 py-2">Save</button>
+    </form>
+  </div>
+  <div class="rounded-2xl border bg-white p-6">
+    <div class="text-lg font-semibold mb-4">Data Management</div>
+    <a href="{{ url_for('library') }}" class="px-4 py-2 rounded-lg border">Open Library</a>
+  </div>
+</div>
+{% endblock %}
