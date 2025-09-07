@@ -74,3 +74,10 @@ CREATE TABLE IF NOT EXISTS preferences (
 );
 
 INSERT INTO preferences (user_id) VALUES (1) ON DUPLICATE KEY UPDATE user_id=user_id;
+
+
+ALTER TABLE preferences ADD COLUMN daily_suggestions TINYINT(1) DEFAULT 1;
+ALTER TABLE preferences ADD COLUMN weekly_discovery TINYINT(1) DEFAULT 1;
+ALTER TABLE preferences ADD COLUMN auto_suggestions TINYINT(1) DEFAULT 1;
+ALTER TABLE preferences ADD COLUMN cooldown_days INT DEFAULT 4;
+ALTER TABLE preferences ADD COLUMN theme VARCHAR(10) DEFAULT 'light';

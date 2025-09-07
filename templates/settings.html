@@ -1,44 +1,151 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="mb-24 grid grid-cols-1 lg:grid-cols-2 gap-6">
-  <div class="rounded-2xl border bg-white p-6">
-    <div class="text-lg font-semibold mb-4">Profile & Preferences</div>
-    <form method="post" class="space-y-3">
+<div class="mb-24">
+  <div class="text-center text-xl font-semibold mb-4">Settings</div>
+  <form method="post" action="{{ url_for('settings') }}" enctype="multipart/form-data" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="rounded-2xl border bg-white p-6">
+      <div class="text-lg font-semibold mb-4">Profile & Preferences</div>
       <div class="grid grid-cols-2 gap-3">
         <div>
-          <label class="text-sm text-gray-600">Dietary</label>
+          <div class="text-sm text-gray-600 mb-1">Dietary Preferences</div>
           <select name="diet" class="w-full rounded-xl border px-3 py-2">
-            <option {% if prefs.diet=='None' %}selected{% endif %}>None</option>
-            <option {% if prefs.diet=='Veg' %}selected{% endif %}>Veg</option>
-            <option {% if prefs.diet=='Vegan' %}selected{% endif %}>Vegan</option>
+            <option value="None" {% if prefs.diet=='None' %}selected{% endif %}>None</option>
+            <option value="Veg" {% if prefs.diet=='Veg' %}selected{% endif %}>Veg</option>
+            <option value="Vegan" {% if prefs.diet=='Vegan' %}selected{% endif %}>Vegan</option>
           </select>
         </div>
         <div>
-          <label class="text-sm text-gray-600">Spice</label>
+          <div class="text-sm text-gray-600 mb-1">Spice Tolerance</div>
           <select name="spice_level" class="w-full rounded-xl border px-3 py-2">
-            <option {% if prefs.spice_level=='Low' %}selected{% endif %}>Low</option>
-            <option {% if prefs.spice_level=='Medium' %}selected{% endif %}>Medium</option>
-            <option {% if prefs.spice_level=='High' %}selected{% endif %}>High</option>
+            <option value="Low" {% if prefs.spice_level=='Low' %}selected{% endif %}>Low</option>
+            <option value="Medium" {% if prefs.spice_level=='Medium' %}selected{% endif %}>Medium</option>
+            <option value="High" {% if prefs.spice_level=='High' %}selected{% endif %}>High</option>
           </select>
         </div>
       </div>
-      <div class="grid grid-cols-2 gap-3">
+      <div class="grid grid-cols-2 gap-3 mt-3">
         <div>
-          <label class="text-sm text-gray-600">Time Max</label>
+          <div class="text-sm text-gray-600 mb-1">Allergies</div>
+          <input name="allergies" value="{{ prefs.allergies or '' }}" placeholder="peanut, shellfish" class="w-full rounded-xl border px-3 py-2">
+        </div>
+        <div>
+          <div class="text-sm text-gray-600 mb-1">Avoid</div>
+          <input name="avoid" value="{{ prefs.avoid or '' }}" placeholder="mushroom, capsicum" class="w-full rounded-xl border px-3 py-2">
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3 mt-3">
+        <div>
+          <div class="text-sm text-gray-600 mb-1">Time Max</div>
           <input type="number" name="time_max" value="{{ prefs.time_max }}" class="w-full rounded-xl border px-3 py-2">
         </div>
         <div>
-          <label class="text-sm text-gray-600">Notification Time</label>
+          <div class="text-sm text-gray-600 mb-1">Notification Time</div>
           <input type="time" name="notify_time" value="{{ prefs.notify_time }}" class="w-full rounded-xl border px-3 py-2">
         </div>
       </div>
-      <div class="text-sm text-gray-600">Cooldown: {{ cooldown }} days</div>
-      <button class="rounded-xl bg-emerald-600 text-white px-5 py-2">Save</button>
-    </form>
-  </div>
-  <div class="rounded-2xl border bg-white p-6">
-    <div class="text-lg font-semibold mb-4">Data Management</div>
-    <a href="{{ url_for('library') }}" class="px-4 py-2 rounded-lg border">Open Library</a>
-  </div>
+    </div>
+
+    <div class="rounded-2xl border bg-white p-6">
+      <div class="text-lg font-semibold mb-4">Notifications</div>
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="font-medium">Daily Suggestions</div>
+          <div class="text-sm text-gray-500">Get notified when today's meal is ready</div>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" name="daily_suggestions" class="sr-only peer" {% if prefs.daily_suggestions %}checked{% endif %}>
+          <div class="w-11 h-6 bg-gray-200 rounded-full peer-checked:bg-emerald-600 relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-5"></div>
+        </label>
+      </div>
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-medium">Weekly Discovery</div>
+          <div class="text-sm text-gray-500">New meal ideas every Monday</div>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" name="weekly_discovery" class="sr-only peer" {% if prefs.weekly_discovery %}checked{% endif %}>
+          <div class="w-11 h-6 bg-gray-200 rounded-full peer-checked:bg-emerald-600 relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-5"></div>
+        </label>
+      </div>
+    </div>
+
+    <div class="rounded-2xl border bg-white p-6">
+      <div class="text-lg font-semibold mb-4">Algorithm Settings</div>
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <div class="font-medium">Auto-Suggestions</div>
+          <div class="text-sm text-gray-500">Automatically pick today's meal</div>
+        </div>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" name="auto_suggestions" class="sr-only peer" {% if prefs.auto_suggestions %}checked{% endif %}>
+          <div class="w-11 h-6 bg-gray-200 rounded-full peer-checked:bg-emerald-600 relative after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:h-5 after:w-5 after:bg-white after:rounded-full after:transition-all peer-checked:after:translate-x-5"></div>
+        </label>
+      </div>
+      <div>
+        <div class="text-sm text-gray-600 mb-1">Cooldown Period</div>
+        <input type="range" min="1" max="7" step="1" name="cooldown_days" value="{{ prefs.cooldown_days or 4 }}" id="cd" class="w-full">
+        <div class="flex justify-between text-xs text-gray-500 mt-1">
+          <span>1 day</span>
+          <span><span id="cdv">{{ prefs.cooldown_days or 4 }}</span> days</span>
+          <span>7 days</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-2xl border bg-white p-6">
+      <div class="text-lg font-semibold mb-4">Data Management</div>
+      <div class="flex items-center gap-3 mb-4">
+        <a href="{{ url_for('export_library') }}" class="px-4 py-2 rounded-lg border">Export Library</a>
+        <label class="px-4 py-2 rounded-lg border cursor-pointer">
+          <input type="file" name="file" class="hidden" onchange="document.getElementById('importSubmit').click()">
+          Import Library
+        </label>
+        <button id="importSubmit" formaction="{{ url_for('import_library') }}" formmethod="post" class="hidden">Import</button>
+      </div>
+      <div class="text-sm text-gray-600">Library Statistics</div>
+      <div class="grid grid-cols-4 gap-3 mt-2">
+        <div class="rounded-xl border p-3 text-center">
+          <div class="text-2xl font-semibold">{{ stats.total }}</div>
+          <div class="text-xs text-gray-500">Total Dishes</div>
+        </div>
+        <div class="rounded-xl border p-3 text-center">
+          <div class="text-2xl font-semibold">{{ stats.cuisines }}</div>
+          <div class="text-xs text-gray-500">Cuisines</div>
+        </div>
+        <div class="rounded-xl border p-3 text-center">
+          <div class="text-2xl font-semibold">{{ stats.avg_time }}</div>
+          <div class="text-xs text-gray-500">Avg Cook Time</div>
+        </div>
+        <div class="rounded-xl border p-3 text-center">
+          <div class="text-2xl font-semibold">{{ stats.veg_pct }}%</div>
+          <div class="text-xs text-gray-500">Vegetarian</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="rounded-2xl border bg-white p-6">
+      <div class="text-lg font-semibold mb-4">App Settings</div>
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-medium">Theme</div>
+          <div class="text-sm text-gray-500">Light mode</div>
+        </div>
+        <select name="theme" class="rounded-xl border px-3 py-2">
+          <option value="light" {% if prefs.theme=='light' %}selected{% endif %}>Light</option>
+        </select>
+      </div>
+      <div class="flex items-center justify-between mt-4">
+        <div class="text-sm text-gray-500">App Version</div>
+        <div class="text-sm">MealMind v1.0.0</div>
+      </div>
+    </div>
+
+    <div class="lg:col-span-2 flex justify-end">
+      <button class="px-5 py-3 rounded-xl bg-emerald-600 text-white">Save Settings</button>
+    </div>
+  </form>
 </div>
+<script>
+const cd=document.getElementById('cd');const v=document.getElementById('cdv');if(cd&&v){cd.addEventListener('input',()=>v.textContent=cd.value)}
+</script>
 {% endblock %}
