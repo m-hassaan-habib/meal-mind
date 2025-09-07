@@ -1,7 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, jsonify, Response
-from datetime import date, timedelta
-import csv, io
-import random
+from datetime import date, timedelta, datetime
+import csv, io, random
 import config
 from db import close_db, query, execute
 
@@ -21,21 +20,33 @@ def get_cooldown_days(user_id=1):
     d = prefs.get('cooldown_days') or config.COOLDOWN_DAYS
     return int(d)
 
-def today_pick(user_id=1):
+def pick_candidate(user_id=1):
     today = date.today()
-    existing = query('SELECT d.*, dp.is_override FROM day_plan dp JOIN dishes d ON d.id=dp.dish_id WHERE dp.user_id=%s AND dp.date=%s', (user_id, today), one=True)
-    if existing:
-        return existing
     cd = get_cooldown_days(user_id)
-    rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id NOT IN (SELECT dish_id FROM day_plan WHERE user_id=%s AND date>=%s)', (user_id, user_id, today - timedelta(days=cd)))
+    rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id NOT IN (SELECT dish_id FROM day_plan WHERE user_id=%s AND date >= %s)', (user_id, user_id, today - timedelta(days=cd)))
     if not rows:
         rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1', (user_id,))
+    if not rows:
+        return None
     def score(r):
         lc = r.get('last_cooked_at')
         base = 0 if lc is None else (today - lc).days
         return base + random.random()
     rows.sort(key=score, reverse=True)
-    return rows[0] if rows else None
+    return rows[0]
+
+def get_or_create_today_plan(user_id=1):
+    today_d = date.today()
+    existing = query('SELECT d.*, dp.is_override FROM day_plan dp JOIN dishes d ON d.id=dp.dish_id WHERE dp.user_id=%s AND dp.date=%s', (user_id, today_d), one=True)
+    if existing:
+        return existing
+    prefs = get_prefs(user_id)
+    if prefs.get('auto_suggestions', 1):
+        cand = pick_candidate(user_id)
+        if cand:
+            execute('INSERT INTO day_plan (user_id,date,dish_id,is_override) VALUES (%s,%s,%s,0) ON DUPLICATE KEY UPDATE dish_id=VALUES(dish_id), is_override=0', (user_id, today_d, cand['id']))
+            return query('SELECT d.*, dp.is_override FROM day_plan dp JOIN dishes d ON d.id=dp.dish_id WHERE dp.user_id=%s AND dp.date=%s', (user_id, today_d), one=True)
+    return pick_candidate(user_id)
 
 def alt_picks(exclude_id, user_id=1, limit=3):
     today = date.today()
@@ -53,12 +64,23 @@ def days_ago(d):
 
 @app.route('/')
 def today():
-    pick = today_pick(1)
+    pick = get_or_create_today_plan(1)
     alts = alt_picks(pick['id'], 1, 3) if pick else []
     recent = query('SELECT d.*, dp.date AS cooked_date FROM day_plan dp JOIN dishes d ON d.id=dp.dish_id WHERE dp.user_id=%s ORDER BY dp.date DESC LIMIT 6', (1,))
-    has_plan = query('SELECT 1 FROM day_plan WHERE user_id=%s AND date=%s', (1, date.today()), one=True) is not None
     cooldown = get_cooldown_days(1)
-    return render_template('today.html', pick=pick, alts=alts, recent=recent, days_ago=days_ago, cooldown=cooldown, has_plan=has_plan)
+    return render_template('today.html', pick=pick, alts=alts, recent=recent, days_ago=days_ago, cooldown=cooldown, rotate_seconds=config.DEV_ROTATE_SECONDS)
+
+@app.get('/api/pick')
+def api_pick():
+    force = request.args.get('force')
+    p = pick_candidate(1) if force else get_or_create_today_plan(1)
+    if not p:
+        return jsonify({}), 404
+    x = dict(p)
+    v = x.get('last_cooked_at')
+    if isinstance(v, (date, datetime)):
+        x['last_cooked_at'] = v.isoformat()
+    return jsonify(x)
 
 @app.post('/cook')
 def cook():
@@ -90,17 +112,7 @@ def match_dishes(tokens):
     if not tokens:
         return []
     placeholders = ','.join(['%s']*len(tokens))
-    rows = query(f"""
-SELECT d.id,d.name,d.cuisine,d.time_min,d.difficulty,d.veg,d.spice_level,
-SUM(CASE WHEN i.name IN ({placeholders}) THEN 1 ELSE 0 END) AS hit,
-COUNT(di.ingredient_id) AS total
-FROM dishes d
-LEFT JOIN dish_ingredients di ON di.dish_id=d.id
-LEFT JOIN ingredients i ON i.id=di.ingredient_id
-GROUP BY d.id
-ORDER BY hit DESC, total ASC, d.time_min ASC
-LIMIT 5
-""", tokens)
+    rows = query(f"""SELECT d.id,d.name,d.cuisine,d.time_min,d.difficulty,d.veg,d.spice_level,SUM(CASE WHEN i.name IN ({placeholders}) THEN 1 ELSE 0 END) AS hit,COUNT(di.ingredient_id) AS total FROM dishes d LEFT JOIN dish_ingredients di ON di.dish_id=d.id LEFT JOIN ingredients i ON i.id=di.ingredient_id GROUP BY d.id ORDER BY hit DESC, total ASC, d.time_min ASC LIMIT 5""", tokens)
     return [r for r in rows if r['hit']>0]
 
 @app.post('/override')
