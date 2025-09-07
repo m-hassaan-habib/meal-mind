@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="mb-24">
+  <div class="flex items-center justify-between mb-4">
+    <div class="text-2xl font-semibold">My Library</div>
+    <label for="addDish" class="px-4 py-2 rounded-lg bg-emerald-600 text-white cursor-pointer">Add</label>
+  </div>
+  <form method="get" class="mb-4">
+    <input name="q" value="{{ q }}" placeholder="Search dishes..." class="w-full rounded-xl border px-4 py-3">
+  </form>
+  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    {% for d in rows %}
+    <div class="rounded-2xl border bg-white p-4">
+      <div class="h-28 bg-gradient-to-br from-emerald-50 to-amber-50 rounded-xl mb-3 flex items-center justify-center">
+        <span class="text-gray-400 text-2xl">👨‍🍳</span>
+      </div>
+      <div class="font-semibold">{{ d.name }}</div>
+      <div class="text-sm text-gray-500">{{ d.cuisine or '—' }}</div>
+      <div class="flex items-center gap-3 text-sm text-gray-600 mt-2">
+        <span class="inline-flex items-center gap-1">{{ d.time_min or 0 }}m</span>
+        {% if days_ago(d.last_cooked_at) is not none %}<span>{{ days_ago(d.last_cooked_at) }}d ago</span>{% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<input type="checkbox" id="addDish" class="hidden peer">
+<div class="fixed inset-0 z-50 hidden peer-checked:block">
+  <div class="absolute inset-0 bg-black/40"></div>
+  <div class="absolute inset-0 flex items-center justify-center p-4">
+    <div class="w-full max-w-lg bg-white rounded-2xl p-5 max-h-[80vh] overflow-auto">
+      <form method="post" action="{{ url_for('library_add') }}" class="space-y-3">
+        <div class="text-lg font-semibold">Add Dish</div>
+        <input name="name" placeholder="Dish name" class="w-full rounded-xl border px-4 py-3">
+        <input name="ingredients" placeholder="Ingredients (rice + chicken)" class="w-full rounded-xl border px-4 py-3">
+        <div class="grid grid-cols-2 gap-3">
+          <input type="number" name="time_min" placeholder="Time (min)" class="rounded-xl border px-4 py-3">
+          <input name="cuisine" placeholder="Cuisine" class="rounded-xl border px-4 py-3">
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <select name="difficulty" class="rounded-xl border px-4 py-3"><option>Easy</option><option>Medium</option><option>Hard</option></select>
+          <select name="spice_level" class="rounded-xl border px-4 py-3"><option>Low</option><option>Medium</option><option>High</option><option>Spicy</option></select>
+        </div>
+        <div class="flex items-center gap-2"><input type="checkbox" name="veg" value="1" id="veg"><label for="veg">Vegetarian</label></div>
+        <div class="flex justify-end gap-3 pt-2">
+          <label for="addDish" class="px-4 py-2 rounded-lg border">Cancel</label>
+          <button class="px-4 py-2 rounded-lg bg-emerald-600 text-white">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
