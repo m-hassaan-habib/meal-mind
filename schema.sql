@@ -81,3 +81,7 @@ ALTER TABLE preferences ADD COLUMN weekly_discovery TINYINT(1) DEFAULT 1;
 ALTER TABLE preferences ADD COLUMN auto_suggestions TINYINT(1) DEFAULT 1;
 ALTER TABLE preferences ADD COLUMN cooldown_days INT DEFAULT 4;
 ALTER TABLE preferences ADD COLUMN theme VARCHAR(10) DEFAULT 'light';
+
+
+CREATE INDEX idx_day_plan_user_date ON day_plan (user_id, date);
+CREATE INDEX idx_day_plan_dish ON day_plan (dish_id);

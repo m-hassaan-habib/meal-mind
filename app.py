@@ -8,6 +8,14 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
 app.teardown_appcontext(close_db)
 
+@app.context_processor
+def url_helpers():
+    def url_for_history(**kwargs):
+        args = dict(request.args)
+        args.update(kwargs)
+        return url_for('history', **args)
+    return dict(url_for_history=url_for_history)
+
 def get_prefs(user_id=1):
     row = query('SELECT * FROM preferences WHERE user_id=%s', (user_id,), one=True)
     if not row:
@@ -171,8 +179,52 @@ def library_add():
 
 @app.get('/history')
 def history():
-    rows = query('SELECT d.*, dp.date AS cooked_date, dp.is_override FROM day_plan dp JOIN dishes d ON d.id=dp.dish_id WHERE dp.user_id=%s ORDER BY dp.date DESC LIMIT 60', (1,))
-    return render_template('history.html', rows=rows)
+    q = request.args.get('q', '').strip()
+    period = request.args.get('period', 'all')
+    typ = request.args.get('type', 'all')
+    page = max(int(request.args.get('page', 1) or 1), 1)
+    per = min(max(int(request.args.get('per', 10) or 10), 5), 50)
+
+    where = ['dp.user_id=%s']
+    params = [1]
+    today = date.today()
+
+    if period != 'all':
+        if period == 'today':
+            start, end = today, today
+        elif period == 'yesterday':
+            d = today - timedelta(days=1)
+            start, end = d, d
+        elif period in ['7d', 'week']:
+            start, end = today - timedelta(days=7), today
+        elif period in ['15d']:
+            start, end = today - timedelta(days=15), today
+        elif period in ['30d', 'month']:
+            start, end = today - timedelta(days=30), today
+        elif period in ['365d', 'year']:
+            start, end = today - timedelta(days=365), today
+        else:
+            start, end = None, None
+        if start:
+            where.append('dp.date BETWEEN %s AND %s')
+            params.extend([start, end])
+
+    if q:
+        where.append('d.name LIKE %s')
+        params.append(f'%{q}%')
+
+    if typ == 'override':
+        where.append('dp.is_override=1')
+    elif typ == 'cooked':
+        where.append('dp.is_override=0')
+
+    base = ' FROM day_plan dp JOIN dishes d ON d.id=dp.dish_id WHERE ' + ' AND '.join(where)
+    total = query('SELECT COUNT(*) c' + base, params, one=True)['c']
+    rows = query('SELECT d.*, dp.date AS cooked_date, dp.is_override' + base + ' ORDER BY dp.date DESC, dp.id DESC LIMIT %s OFFSET %s', params + [per, (page - 1) * per])
+    pages = max((total + per - 1) // per, 1)
+
+    return render_template('history.html', rows=rows, q=q, period=period, typ=typ, page=page, pages=pages, per=per, total=total)
+
 
 @app.get('/discover')
 def discover():
