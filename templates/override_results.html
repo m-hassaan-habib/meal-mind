@@ -2,65 +2,70 @@
 {% block content %}
 <div class="mb-24 max-w-3xl mx-auto">
   <div class="rounded-2xl border bg-white p-6">
-    <div class="text-gray-600 mb-3">Search: <span class="font-medium">{{ raw }}</span></div>
-    {% if matches %}
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-gray-600">Search: <span class="font-medium">{{ raw }}</span></div>
+      <div class="text-sm text-gray-500">{{ lib_count }} from Library • {{ web_count }} from Web</div>
+    </div>
+
+    <form method="post" action="{{ url_for('override_post') }}" class="flex gap-2 mb-4">
+      <input name="ingredients" value="{{ raw }}" placeholder="Search again..." class="flex-1 rounded-xl border px-4 py-3">
+      <button class="rounded-xl bg-emerald-600 text-white px-5">Search</button>
+      <a href="{{ url_for('override_get') }}" class="rounded-xl border px-4 py-3">Clear</a>
+    </form>
+
+    {% if items %}
       <div class="space-y-4">
-        {% for m in matches %}
+        {% for m in items %}
         <div class="rounded-xl border p-4 flex items-center gap-4">
           <img src="{{ m.image_url or '/static/img/placeholder.jpg' }}" class="h-20 w-32 rounded-lg object-cover">
           <div class="flex-1">
             <div class="font-semibold">{{ m.name }}</div>
             <div class="text-sm text-gray-500">{{ m.cuisine or '—' }} • {{ m.time_min or 0 }}m</div>
             <div class="flex flex-wrap gap-2 mt-2">
-              {% for tag in m.hit_labels[:6] %}
-                <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">{{ tag }}</span>
-              {% endfor %}
+              {% if m.source == 'library' %}
+                <span class="px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs">From Library</span>
+                {% if m.hit_labels %}
+                  {% for tag in m.hit_labels[:6] %}
+                    <span class="px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs">{{ tag }}</span>
+                  {% endfor %}
+                {% endif %}
+              {% else %}
+                <span class="px-2 py-1 rounded-full bg-amber-100 text-amber-700 text-xs">From Web</span>
+                {% if m.source_url %}
+                  <a href="{{ m.source_url }}" target="_blank" class="text-xs text-emerald-700 underline">Open recipe</a>
+                {% endif %}
+              {% endif %}
             </div>
           </div>
           <div class="grid gap-2">
-            <form method="post" action="{{ url_for('override_confirm') }}">
-              <input type="hidden" name="dish_id" value="{{ m.id }}">
-              <button class="rounded-lg bg-emerald-600 text-white px-4 py-2">Cook Today</button>
-            </form>
-            <form method="post" action="{{ url_for('override_add') }}">
-              <input type="hidden" name="dish_id" value="{{ m.id }}">
-              <button class="rounded-lg border px-4 py-2">Add to Library</button>
-            </form>
+            {% if m.source == 'library' %}
+              <form method="post" action="{{ url_for('override_confirm') }}">
+                <input type="hidden" name="dish_id" value="{{ m.id }}">
+                <button class="rounded-lg bg-emerald-600 text-white px-4 py-2">Cook Today</button>
+              </form>
+              <form method="post" action="{{ url_for('override_add') }}">
+                <input type="hidden" name="dish_id" value="{{ m.id }}">
+                <button class="rounded-lg border px-4 py-2">Add to Library</button>
+              </form>
+            {% else %}
+              <form method="post" action="{{ url_for('library_add') }}" enctype="multipart/form-data">
+                <input type="hidden" name="name" value="{{ m.name }}">
+                <input type="hidden" name="ingredients" value="{{ raw }}">
+                <input type="hidden" name="time_min" value="{{ m.time_min }}">
+                <input type="hidden" name="cuisine" value="{{ m.cuisine }}">
+                <input type="hidden" name="difficulty" value="{{ m.difficulty }}">
+                <input type="hidden" name="spice_level" value="{{ m.spice_level }}">
+                <input type="hidden" name="veg" value="{{ m.veg }}">
+                <input type="hidden" name="image_url" value="{{ m.image_url }}">
+                <button class="rounded-lg bg-emerald-600 text-white px-4 py-2">Import</button>
+              </form>
+            {% endif %}
           </div>
         </div>
         {% endfor %}
       </div>
-    {% endif %}
-
-    {% if not matches and web_results %}
-      <div class="mt-6 text-sm text-gray-600">From the web</div>
-      <div class="space-y-4 mt-2">
-        {% for m in web_results %}
-        <div class="rounded-xl border p-4 flex items-center gap-4">
-          <img src="{{ m.image_url or '/static/img/placeholder.jpg' }}" class="h-20 w-32 rounded-lg object-cover">
-          <div class="flex-1">
-            <div class="font-semibold">{{ m.name }}</div>
-            <div class="text-sm text-gray-500">{{ m.cuisine or '—' }} • ~{{ m.time_min }}m</div>
-            <a href="{{ m.source_url }}" target="_blank" class="text-xs text-emerald-700 underline">Open recipe</a>
-          </div>
-          <form method="post" action="{{ url_for('library_add') }}" enctype="multipart/form-data">
-            <input type="hidden" name="name" value="{{ m.name }}">
-            <input type="hidden" name="ingredients" value="{{ raw }}">
-            <input type="hidden" name="time_min" value="{{ m.time_min }}">
-            <input type="hidden" name="cuisine" value="{{ m.cuisine }}">
-            <input type="hidden" name="difficulty" value="{{ m.difficulty }}">
-            <input type="hidden" name="spice_level" value="{{ m.spice_level }}">
-            <input type="hidden" name="veg" value="{{ m.veg }}">
-            <input type="hidden" name="image_url" value="{{ m.image_url }}">
-            <button class="rounded-lg bg-emerald-600 text-white px-4 py-2">Import</button>
-          </form>
-        </div>
-        {% endfor %}
-      </div>
-    {% endif %}
-
-    {% if not matches and not web_results %}
-      <div class="text-gray-600">No matches. Hit Settings → Discover later, or add a dish to your Library.</div>
+    {% else %}
+      <div class="text-gray-600">No results. Try a simpler search or add a dish to your Library.</div>
     {% endif %}
 
     <div class="mt-4">
