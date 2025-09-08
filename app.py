@@ -19,6 +19,33 @@ app.config['SECRET_KEY'] = config.SECRET_KEY
 app.teardown_appcontext(close_db)
 
 
+def _name_key(s):
+    return re.sub(r'\s+', ' ', (s or '').strip().lower())
+
+def combine_override_results(raw, lib, web):
+    toks = set(ingredient_terms_from_text(raw))
+    for r in lib:
+        r['source'] = 'library'
+        r['score'] = r.get('score', 1)
+    for w in web:
+        w['source'] = 'web'
+        name_tokens = set(re.findall(r'[a-z]+', (w.get('name') or '').lower()))
+        overlap = len(toks & name_tokens)
+        area = (w.get('cuisine') or '').lower()
+        bias = 1 if area in ('pakistani','indian','bangladeshi','afghan') else 0
+        w['score'] = w.get('score', 1) + overlap + bias
+    merged = lib + web
+    out, seen = [], set()
+    for m in merged:
+        k = _name_key(m.get('name'))
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(m)
+    out.sort(key=lambda x: (-x.get('score',0), 0 if x.get('source')=='library' else 1, x.get('time_min') or 999, x.get('name') or ''))
+    return out
+
+
 def web_find_recipes(raw):
     q = raw.replace('+',' ').replace('|',' ').replace('-',' ').strip()
     out = []
@@ -399,11 +426,11 @@ def seed_pk_basics():
 @app.post('/override')
 def override_post():
     raw = request.form.get('ingredients','').strip()
-    matches = match_dishes(raw)
-    web_results = []
-    if not matches:
-        web_results = web_find_recipes(raw)
-    return render_template('override_results.html', raw=raw, matches=matches, web_results=web_results)
+    lib = match_dishes(raw)
+    web = web_find_recipes(raw)
+    items = combine_override_results(raw, lib, web)
+    return render_template('override_results.html', raw=raw, items=items, lib_count=len(lib), web_count=len(web))
+
 
 
 @app.post('/override/add')
