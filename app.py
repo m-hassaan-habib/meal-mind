@@ -211,9 +211,69 @@ def history():
 
 @app.get('/discover')
 def discover():
-    pf_sql, pf_params = pref_filter_sql(1)
-    picks = query('SELECT id,name,cuisine,time_min,difficulty,veg,spice_level,image_url FROM dishes d WHERE 1=1' + pf_sql + ' ORDER BY RAND() LIMIT 6', pf_params)
-    return render_template('discover.html', picks=picks)
+    prefs = get_prefs(1)
+    if prefs.get('weekly_discovery', 1):
+        ensure_weekly_discover(1)
+        ws = week_start()
+        rows = query('''
+            SELECT f.*, d.name AS dname, d.cuisine AS dcuisine, d.time_min AS dtime, 
+                   d.difficulty AS ddifficulty, d.veg AS dveg, d.image_url AS dimg
+            FROM discover_feed f
+            LEFT JOIN dishes d ON d.id=f.dish_id
+            WHERE f.user_id=%s AND f.week_start=%s
+            ORDER BY f.sort_rank ASC, COALESCE(d.name,f.name) ASC
+        ''', (1, ws))
+        picks = []
+        for r in rows:
+            if r['source'] == 'web':
+                picks.append({
+                    'source':'web',
+                    'id': r['id'],
+                    'name': r['name'],
+                    'cuisine': r['cuisine'],
+                    'time_min': r['time_min'],
+                    'difficulty': r['difficulty'],
+                    'veg': r['veg'],
+                    'image_url': r['image_url'],
+                    'source_url': r['source_url'],
+                    'dish_id': None,
+                })
+            else:
+                picks.append({
+                    'source':'library',
+                    'id': r['id'],
+                    'name': r['dname'],
+                    'cuisine': r['dcuisine'],
+                    'time_min': r['dtime'],
+                    'difficulty': r['ddifficulty'],
+                    'veg': r['dveg'],
+                    'image_url': r['dimg'],
+                    'dish_id': r['dish_id'],
+                })
+        return render_template('discover.html', picks=picks, weekly=True)
+    lib = library_candidates(1, 4)
+    web = web_weekly_candidates(1, 4)
+    picks = []
+    seen = set()
+    for r in lib:
+        k = ('lib', r['id'])
+        if k in seen: 
+            continue
+        seen.add(k)
+        picks.append({'source':'library','id':r['id'],'name':r['name'],'cuisine':r['cuisine'],'time_min':r['time_min'],'difficulty':r['difficulty'],'veg':r['veg'],'image_url':r['image_url'],'dish_id':r['id']})
+    for w in web:
+        k = ('web', (w.get('name') or '').strip().lower())
+        if k in seen: 
+            continue
+        seen.add(k)
+        picks.append({'source':'web','id':None,'name':w.get('name'),'cuisine':w.get('cuisine'),'time_min':w.get('time_min'),'difficulty':w.get('difficulty'),'veg':int(w.get('veg',0)),'image_url':w.get('image_url'),'source_url':w.get('source_url'),'dish_id':None})
+    return render_template('discover.html', picks=picks, weekly=False)
+
+
+@app.post('/discover/regen')
+def discover_regen():
+    ensure_weekly_discover(1)
+    return redirect(url_for('discover'))
 
 
 @app.post('/discover/add')

@@ -410,3 +410,82 @@ def ingredient_terms_from_text(s):
         if t and t not in seen:
             flat.append(t); seen.add(t)
     return flat
+
+
+def week_start(d=None):
+    d = d or date.today()
+    return d - timedelta(days=d.weekday())
+
+
+def library_candidates(user_id=1, limit=6):
+    today = date.today()
+    cd = get_cooldown_days(user_id)
+    pf_sql, pf_params = pref_filter_sql(user_id)
+    sql = ('SELECT d.id,d.name,d.cuisine,d.time_min,d.difficulty,d.veg,d.spice_level,d.image_url '
+           'FROM user_library ul JOIN dishes d ON d.id=ul.dish_id '
+           'WHERE ul.user_id=%s AND ul.active=1 AND d.id NOT IN '
+           '(SELECT dish_id FROM day_plan WHERE user_id=%s AND date>=%s)') + pf_sql + ' ORDER BY RAND() LIMIT %s'
+    return query(sql, [user_id, user_id, today - timedelta(days=cd)] + pf_params + [limit])
+
+
+def pk_catalog_candidates(user_id=1, limit=6):
+    pf_sql, pf_params = pref_filter_sql(user_id)
+    sql = ('SELECT d.id,d.name,d.cuisine,d.time_min,d.difficulty,d.veg,d.spice_level,d.image_url '
+           'FROM dishes d LEFT JOIN user_library ul ON ul.dish_id=d.id AND ul.user_id=%s '
+           'WHERE d.cuisine=%s AND (ul.dish_id IS NULL OR ul.active=0)') + pf_sql + ' ORDER BY RAND() LIMIT %s'
+    return query(sql, [user_id, 'Pakistani'] + pf_params + [limit])
+
+
+def ensure_weekly_discover(user_id=1, total=8, lib_target=4, web_target=4):
+    ws = week_start()
+    have = query('SELECT COUNT(*) c FROM discover_feed WHERE user_id=%s AND week_start=%s', (user_id, ws), one=True)['c']
+    if int(have or 0) >= total:
+        return
+    lib = library_candidates(user_id, lib_target)
+    web = web_weekly_candidates(user_id, web_target)
+    items, ids = [], set()
+    for r in lib:
+        if r['id'] in ids: 
+            continue
+        items.append(('library', r['id'], None)); ids.add(r['id'])
+    for w in web:
+        n = (w.get('name') or '').strip().lower()
+        if n in ids: 
+            continue
+        items.append(('web', None, w)); ids.add(n)
+    items = items[:total]
+    execute('DELETE FROM discover_feed WHERE user_id=%s AND week_start=%s', (user_id, ws))
+    rank = 1
+    for src, did, w in items:
+        if src == 'library':
+            execute('INSERT INTO discover_feed (user_id,week_start,dish_id,source,sort_rank) VALUES (%s,%s,%s,%s,%s)', (user_id, ws, did, 'library', rank))
+        else:
+            execute('INSERT INTO discover_feed (user_id,week_start,source,sort_rank,name,image_url,source_url,time_min,cuisine,difficulty,veg) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                    (user_id, ws, 'web', rank, w.get('name'), w.get('image_url'), w.get('source_url',''), w.get('time_min'), w.get('cuisine'), w.get('difficulty'), int(w.get('veg',0))))
+        rank += 1
+
+
+def web_weekly_candidates(user_id=1, limit=5):
+    seeds = ['biryani','karahi','dal','khichdi','korma','sabzi','kebab','pulao','haleem','nihari']
+    names = {r['name'].strip().lower()
+             for r in query('SELECT d.name FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1', (user_id,))}
+    pool = []
+    random.shuffle(seeds)
+    for s in seeds[:3]:
+        res = web_find_recipes(s)
+        for m in res:
+            n = (m.get('name') or '').strip().lower()
+            if not n or n in names: 
+                continue
+            pool.append(m)
+    out, seen = [], set()
+    random.shuffle(pool)
+    for m in pool:
+        k = (m.get('name') or '').strip().lower()
+        if k in seen: 
+            continue
+        seen.add(k)
+        out.append(m)
+        if len(out) >= limit:
+            break
+    return out
