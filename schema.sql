@@ -70,22 +70,41 @@ CREATE TABLE IF NOT EXISTS preferences (
   allergies TEXT,
   avoid TEXT,
   notify_time TIME DEFAULT '19:00',
+  daily_suggestions TINYINT(1) DEFAULT 1,
+  weekly_discovery TINYINT(1) DEFAULT 1,
+  auto_suggestions TINYINT(1) DEFAULT 1,
+  cooldown_days INT DEFAULT 4,
+  theme VARCHAR(10) DEFAULT 'light',
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS discover_feed (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  week_start DATE NOT NULL,
+  dish_id INT NULL,
+  source VARCHAR(16) NOT NULL,
+  sort_rank INT DEFAULT 0,
+  name VARCHAR(255) NULL,
+  image_url VARCHAR(500) NULL,
+  source_url VARCHAR(500) NULL,
+  time_min INT NULL,
+  cuisine VARCHAR(64) NULL,
+  difficulty VARCHAR(32) NULL,
+  veg TINYINT(1) DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_week_dish (user_id, week_start, dish_id),
+  KEY idx_user_week (user_id, week_start)
+);
+
+
 INSERT INTO preferences (user_id) VALUES (1) ON DUPLICATE KEY UPDATE user_id=user_id;
-
-
-ALTER TABLE preferences ADD COLUMN daily_suggestions TINYINT(1) DEFAULT 1;
-ALTER TABLE preferences ADD COLUMN weekly_discovery TINYINT(1) DEFAULT 1;
-ALTER TABLE preferences ADD COLUMN auto_suggestions TINYINT(1) DEFAULT 1;
-ALTER TABLE preferences ADD COLUMN cooldown_days INT DEFAULT 4;
-ALTER TABLE preferences ADD COLUMN theme VARCHAR(10) DEFAULT 'light';
-
 
 CREATE INDEX idx_day_plan_user_date ON day_plan (user_id, date);
 CREATE INDEX idx_day_plan_dish ON day_plan (dish_id);
 
-
 ALTER TABLE dishes ADD INDEX idx_dishes_name (name);
 ALTER TABLE dish_ingredients ADD INDEX idx_di_ingredient (ingredient_id);
+ALTER TABLE user_library ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE discover_feed ADD UNIQUE KEY uq_user_week_name (user_id, week_start, name);

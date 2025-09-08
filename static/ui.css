@@ -1,0 +1,82 @@
+:root{
+  --brand-1:#10b981;
+  --brand-2:#14b8a6;
+  --shadow-sm:0 2px 8px rgba(2,6,23,.05);
+  --shadow-md:0 8px 20px rgba(2,6,23,.10);
+  --shadow-brand:0 12px 24px rgba(16,185,129,.18);
+}
+@keyframes in-up{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
+
+.ui .border.bg-white{
+  box-shadow:var(--shadow-sm);
+  transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease, filter .18s ease;
+  animation:in-up .25s ease both;
+}
+.ui .border.bg-white:hover{
+  transform:translateY(-2px);
+  box-shadow:var(--shadow-brand);
+  border-color:rgba(16,185,129,.35);
+}
+.ui .border.bg-white:active{transform:translateY(-1px);filter:brightness(.99)}
+
+.ui .rounded-xl.border,
+.ui .rounded-2xl.border{
+  box-shadow:var(--shadow-sm);
+  transition:transform .18s ease, box-shadow .18s ease, border-color .18s ease, filter .18s ease;
+}
+.ui .rounded-xl.border:hover,
+.ui .rounded-2xl.border:hover{
+  transform:translateY(-2px);
+  box-shadow:var(--shadow-md),var(--shadow-brand);
+  border-color:rgba(16,185,129,.35);
+}
+
+.ui button,
+.ui .btn,
+.ui a.button,
+.ui .bg-emerald-600,
+.ui .bg-gradient-to-r{
+  transition:transform .15s ease, box-shadow .15s ease, filter .15s ease, background-color .15s ease, opacity .15s ease;
+  box-shadow:0 1px 0 rgba(0,0,0,.02),0 2px 6px rgba(2,6,23,.06);
+  will-change:transform;
+}
+.ui button:hover,
+.ui .btn:hover,
+.ui a.button:hover,
+.ui .bg-emerald-600:hover,
+.ui .bg-gradient-to-r:hover{
+  transform:translateY(-1px);
+  box-shadow:0 6px 16px rgba(16,185,129,.25),0 2px 8px rgba(2,6,23,.06);
+}
+.ui button:active,
+.ui .btn:active,
+.ui a.button:active,
+.ui .bg-emerald-600:active,
+.ui .bg-gradient-to-r:active{
+  transform:translateY(0);
+  filter:brightness(.98);
+}
+
+.ui .rounded-full{
+  transition:box-shadow .18s ease, transform .18s ease;
+}
+.ui .rounded-full:hover{
+  box-shadow:0 0 0 4px rgba(16,185,129,.18) inset;
+  transform:translateY(-1px);
+}
+
+.ui input, .ui select, .ui textarea{
+  transition:border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+}
+.ui input:focus, .ui select:focus, .ui textarea:focus{
+  outline:0;
+  box-shadow:0 0 0 3px rgba(16,185,129,.25);
+  border-color:rgba(16,185,129,.5);
+}
+
+.ui .card-hover img{
+  transition:transform .3s ease, filter .3s ease;
+}
+.ui .card-hover:hover img{
+  transform:scale(1.03);
+}

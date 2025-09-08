@@ -24,6 +24,13 @@
           <span>{{ d.time_min or 0 }}m</span>
           {% if days_ago(d.last_cooked_at) is not none %}<span>{{ days_ago(d.last_cooked_at) }}d ago</span>{% endif %}
         </div>
+        <form method="post" action="{{ url_for('cook') }}" class="mt-3">
+          <input type="hidden" name="dish_id" value="{{ d.id }}">
+          <input type="hidden" name="next" value="{{ url_for('library', q=q) }}">
+          <button class="w-full rounded-lg bg-emerald-600 text-white py-2 hover:brightness-105 active:brightness-95 transition">
+            Cook Today
+          </button>
+        </form>
       </div>
     {% endfor %}
   </div>

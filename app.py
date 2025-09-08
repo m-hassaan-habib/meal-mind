@@ -49,6 +49,7 @@ def api_pick():
 @app.post('/cook')
 def cook():
     dish_id = int(request.form['dish_id'])
+    next_url = request.form.get('next') or url_for('today')
     today_d = date.today()
     exist = query('SELECT id FROM day_plan WHERE user_id=%s AND date=%s', (1, today_d), one=True)
     if not exist:
@@ -56,7 +57,7 @@ def cook():
     else:
         execute('UPDATE day_plan SET dish_id=%s,is_override=0 WHERE id=%s', (dish_id, exist['id']))
     execute('UPDATE user_library SET last_cooked_at=%s WHERE user_id=%s AND dish_id=%s', (today_d, 1, dish_id))
-    return redirect(url_for('today'))
+    return redirect(next_url)
 
 
 @app.post('/swap')
@@ -211,9 +212,22 @@ def history():
 
 @app.get('/discover')
 def discover():
-    pf_sql, pf_params = pref_filter_sql(1)
-    picks = query('SELECT id,name,cuisine,time_min,difficulty,veg,spice_level,image_url FROM dishes d WHERE 1=1' + pf_sql + ' ORDER BY RAND() LIMIT 6', pf_params)
-    return render_template('discover.html', picks=picks)
+    ensure_weekly_web_discover(1, total=12)
+    ws = week_start()
+    rows = query('SELECT id,name,image_url,source_url,time_min,cuisine,difficulty,veg FROM discover_feed WHERE user_id=%s AND week_start=%s AND source=%s ORDER BY sort_rank ASC, id ASC', (1, ws, 'web'))
+    picks = [{'source':'web','df_id':r['id'],'name':r['name'],'image_url':r['image_url'],'source_url':r['source_url'],'time_min':r['time_min'],'cuisine':r['cuisine'],'difficulty':r['difficulty'],'veg':r['veg']} for r in rows]
+    return render_template('discover.html', picks=picks, weekly=True)
+
+
+@app.post('/discover/regen')
+def discover_regen():
+    ensure_weekly_web_discover(1)
+    return redirect(url_for('discover'))
+
+
+def discover_candidates(user_id=1, limit=3):
+    ws = week_start()
+    return query('SELECT id,name,image_url,time_min,cuisine FROM discover_feed WHERE user_id=%s AND week_start=%s AND source=%s ORDER BY RAND() LIMIT %s', (user_id, ws, 'web', limit))
 
 
 @app.post('/discover/add')
@@ -303,6 +317,26 @@ def dish_image(dish_id):
         return redirect(url_for('library'))
     execute('UPDATE dishes SET image_url=%s WHERE id=%s', (url, dish_id))
     return redirect(url_for('library'))
+
+
+@app.post('/discover/import_cook')
+def discover_import_cook():
+    df_id = int(request.form['df_id'])
+    did = materialize_discover(df_id, 1)
+    if did:
+        today_d = date.today()
+        exist = query('SELECT id FROM day_plan WHERE user_id=%s AND date=%s', (1, today_d), one=True)
+        if not exist:
+            execute('INSERT INTO day_plan (user_id,date,dish_id,is_override) VALUES (%s,%s,%s,1)', (1, today_d, did))
+        else:
+            execute('UPDATE day_plan SET dish_id=%s,is_override=1 WHERE id=%s', (did, exist['id']))
+        execute('UPDATE user_library SET last_cooked_at=%s WHERE user_id=%s AND dish_id=%s', (today_d, 1, did))
+    return redirect(url_for('today'))
+
+
+@app.context_processor
+def inject_days_ago():
+    return dict(days_ago=days_ago)
 
 
 if __name__ == '__main__':
