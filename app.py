@@ -5,6 +5,10 @@ import config
 from db import close_db, query, execute
 import os, uuid
 from PIL import Image
+import re
+from difflib import get_close_matches
+import requests
+
 
 
 UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
@@ -13,6 +17,96 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
 app.teardown_appcontext(close_db)
+
+
+def web_find_recipes(raw):
+    q = raw.replace('+',' ').replace('|',' ').replace('-',' ').strip()
+    out = []
+    try:
+        r = requests.get('https://www.themealdb.com/api/json/v1/1/search.php', params={'s': q}, timeout=6)
+        j = r.json() if r.status_code==200 else {}
+        meals = j.get('meals') or []
+        for m in meals:
+            area = (m.get('strArea') or '')
+            if area not in ['Pakistani','Indian','Bangladeshi','Afghan','Middle Eastern','Arabic','Unknown']:
+                continue
+            out.append({
+                'id': int(m.get('idMeal')),
+                'name': m.get('strMeal'),
+                'cuisine': area or '—',
+                'time_min': 40,
+                'difficulty': 'Medium',
+                'veg': 0,
+                'spice_level': 'Medium',
+                'image_url': m.get('strMealThumb'),
+                'external': True,
+                'source_url': m.get('strSource') or f"https://www.themealdb.com/meal/{m.get('idMeal')}"
+            })
+        if not out:
+            toks = [t for t in re.split(r'[\s\+\|\-]+', q.lower()) if t]
+            best = toks[0] if toks else 'dal'
+            r = requests.get('https://www.themealdb.com/api/json/v1/1/search.php', params={'s': best}, timeout=6)
+            j = r.json() if r.status_code==200 else {}
+            meals = j.get('meals') or []
+            for m in meals[:8]:
+                area = (m.get('strArea') or '')
+                out.append({
+                    'id': int(m.get('idMeal')),
+                    'name': m.get('strMeal'),
+                    'cuisine': area or '—',
+                    'time_min': 40,
+                    'difficulty': 'Medium',
+                    'veg': 0,
+                    'spice_level': 'Medium',
+                    'image_url': m.get('strMealThumb'),
+                    'external': True,
+                    'source_url': m.get('strSource') or f"https://www.themealdb.com/meal/{m.get('idMeal')}"
+                })
+    except Exception:
+        return []
+    names = set()
+    dedup = []
+    for r in out:
+        if r['name'] in names: continue
+        names.add(r['name']); dedup.append(r)
+    return dedup[:10]
+
+
+def resolve_ingredient_ids(tokens):
+    if not tokens:
+        return {}
+    names = [t for t in tokens]
+    rows = query('SELECT id,name FROM ingredients WHERE name IN ('+','.join(['%s']*len(names))+')', names)
+    known = {r['name']: r['id'] for r in rows}
+    if len(known) == len(tokens):
+        return {t: known[t] for t in tokens}
+    all_names = [r['name'] for r in query('SELECT name FROM ingredients')]
+    resolved = {}
+    for t in tokens:
+        if t in known:
+            resolved[t] = known[t]
+            continue
+        cand = get_close_matches(t, all_names, n=1, cutoff=0.8)
+        if cand:
+            rid = query('SELECT id FROM ingredients WHERE name=%s', (cand[0],), one=True)['id']
+            resolved[t] = rid
+    return resolved
+
+def dish_name_hits(raw):
+    raw = raw.strip()
+    if not raw:
+        return []
+    rows = list(query(
+        'SELECT id,name,cuisine,time_min,difficulty,veg,spice_level,image_url '
+        'FROM dishes WHERE name LIKE %s '
+        'ORDER BY CASE WHEN name=%s THEN 0 ELSE 1 END, LENGTH(name) ASC LIMIT 5',
+        (f'%{raw}%', raw)
+    ))
+    for r in rows:
+        r['score'] = 999
+        r['hit_labels'] = ['name match']
+    return rows
+
 
 
 def _center_crop_ratio(img, rw=16, rh=9):
@@ -151,23 +245,173 @@ def swap():
 def override_get():
     return render_template('override.html')
 
-def normalize_tokens(s):
-    t = s.replace('+', ' ').replace(',', ' ').lower().split()
-    return [x.strip() for x in t if x.strip()]
 
-def match_dishes(tokens):
+def normalize_tokens(s):
+    s = s.lower().strip()
+    s = s.replace(',', ' ')
+    s = s.replace('/', ' | ')
+    s = re.sub(r'\band\b', '+', s)
+    s = re.sub(r'\bor\b', '|', s)
+    s = re.sub(r'\s+', ' ', s)
+    s = re.sub(r'([+\-|])', r' \1 ', s).strip()
+    parts = [p for p in s.split() if p]
+    op = '+'
+    required, optional, excluded = [], [], []
+    for p in parts:
+        if p in ['+','|','-']:
+            op = p
+            continue
+        if p.endswith('s') and len(p) > 3:
+            p = p[:-1]
+        aliases = {
+            'chkn':'chicken','chikn':'chicken','chk':'chicken','murghi':'chicken',
+            'qeema':'keema','keema':'keema',
+            'aloo':'potato','bhindi':'okra','saag':'spinach','machli':'fish',
+            'dal':'dal','daal':'dal','dāl':'dal',
+            'masoor':'masoor dal','moong':'moong dal','chanadal':'chana dal','chana':'chana dal','mash':'urad dal','urad':'urad dal',
+            'chawal':'rice','chāwal':'rice'
+        }
+
+        p = aliases.get(p, p)
+        if op == '-':
+            excluded.append(p)
+        elif op == '|':
+            optional.append(p)
+        else:
+            required.append(p)
+    return required, optional, excluded
+
+
+def resolve_ingredient_ids(tokens):
     if not tokens:
+        return {}
+    names = [t for t in tokens]
+    rows = query('SELECT id,name FROM ingredients WHERE name IN ('+','.join(['%s']*len(names))+')', names)
+    known = {r['name']: r['id'] for r in rows}
+    if len(known) == len(tokens):
+        return {t: known[t] for t in tokens}
+    all_names = [r['name'] for r in query('SELECT name FROM ingredients')]
+    resolved = {}
+    for t in tokens:
+        if t in known:
+            resolved[t] = known[t]
+            continue
+        cand = get_close_matches(t, all_names, n=1, cutoff=0.8)
+        if cand:
+            rid = query('SELECT id FROM ingredients WHERE name=%s', (cand[0],), one=True)['id']
+            resolved[t] = rid
+    return resolved
+
+
+def dish_name_hits(raw):
+    raw = raw.strip()
+    if not raw:
         return []
-    placeholders = ','.join(['%s']*len(tokens))
-    rows = query(f"""SELECT d.id,d.name,d.cuisine,d.time_min,d.difficulty,d.veg,d.spice_level,SUM(CASE WHEN i.name IN ({placeholders}) THEN 1 ELSE 0 END) AS hit,COUNT(di.ingredient_id) AS total FROM dishes d LEFT JOIN dish_ingredients di ON di.dish_id=d.id LEFT JOIN ingredients i ON i.id=di.ingredient_id GROUP BY d.id ORDER BY hit DESC, total ASC, d.time_min ASC LIMIT 5""", tokens)
-    return [r for r in rows if r['hit']>0]
+    rows = query('SELECT id,name,cuisine,time_min,difficulty,veg,spice_level,image_url FROM dishes WHERE name LIKE %s ORDER BY CASE WHEN name=%s THEN 0 ELSE 1 END, LENGTH(name) ASC LIMIT 5', (f'%{raw}%', raw))
+    for r in rows:
+        r['score'] = 999
+        r['hit_labels'] = ['name match']
+    return rows
+
+
+def match_dishes(raw):
+    req, opt, ex = normalize_tokens(raw)
+    rid = resolve_ingredient_ids(req)
+    oid = resolve_ingredient_ids(opt)
+    xid = resolve_ingredient_ids(ex)
+    req_ids = set(rid.values())
+    opt_ids = set(oid.values())
+    ex_ids = set(xid.values())
+    all_ids = list(req_ids | opt_ids | ex_ids)
+
+    hits = list(dish_name_hits(raw))  # force list
+
+    if not all_ids:
+        return hits
+
+    placeholders = ','.join(['%s']*len(all_ids))
+    rows = query(f'''
+        SELECT d.id,d.name,d.cuisine,d.time_min,d.difficulty,d.veg,d.spice_level,d.image_url,
+               GROUP_CONCAT(i.id) AS hit_ids,
+               GROUP_CONCAT(i.name) AS hit_names
+        FROM dishes d
+        JOIN dish_ingredients di ON di.dish_id=d.id
+        JOIN ingredients i ON i.id=di.ingredient_id
+        WHERE di.ingredient_id IN ({placeholders})
+        GROUP BY d.id
+    ''', all_ids)
+
+    out, seen = [], set()
+    for r in rows:
+        ids = set(map(int, r['hit_ids'].split(','))) if r['hit_ids'] else set()
+        if ex_ids & ids:
+            continue
+        if req_ids and not req_ids.issubset(ids):
+            continue
+        score = len(req_ids & ids)*2 + len(opt_ids & ids)
+        if score <= 0:
+            continue
+        r['score'] = score
+        r['hit_labels'] = [n for n in (r['hit_names'] or '').split(',') if n]
+        if r['id'] not in seen:
+            out.append(r); seen.add(r['id'])
+
+    out.sort(key=lambda x: (-x['score'], x.get('time_min') or 999, x['name']))
+    id_hits = {h['id'] for h in hits}
+    return hits + [o for o in out if o['id'] not in id_hits]
+
+
+def ensure_ing(name):
+    r = query('SELECT id FROM ingredients WHERE name=%s', (name,), one=True)
+    return r['id'] if r else execute('INSERT INTO ingredients (name) VALUES (%s)', (name,))
+
+def ensure_dish(d):
+    r = query('SELECT id FROM dishes WHERE name=%s', (d['name'],), one=True)
+    if r:
+        return r['id']
+    return execute('INSERT INTO dishes (name,cuisine,time_min,difficulty,veg,spice_level,image_url) VALUES (%s,%s,%s,%s,%s,%s,%s)',
+                   (d['name'], d['cuisine'], d['time_min'], d['difficulty'], d['veg'], d['spice_level'], d.get('image_url','/static/img/placeholder.jpg')))
+
+def link_di(dish_id, ing_names):
+    for n in ing_names:
+        iid = ensure_ing(n)
+        execute('INSERT IGNORE INTO dish_ingredients (dish_id,ingredient_id) VALUES (%s,%s)', (dish_id, iid))
+
+@app.post('/admin/seed_pk_basics')
+def seed_pk_basics():
+    catalog = [
+        {'name':'Dal Chawal','cuisine':'Pakistani','time_min':35,'difficulty':'Easy','veg':1,'spice_level':'Medium','ings':['rice','dal','onion','tomato','garlic','ginger','cumin','turmeric','red chili','salt','oil']},
+        {'name':'Khichdi','cuisine':'Pakistani','time_min':30,'difficulty':'Easy','veg':1,'spice_level':'Low','ings':['rice','moong dal','onion','ginger','cumin','turmeric','salt','ghee']},
+        {'name':'Moong Dal Khichdi','cuisine':'Pakistani','time_min':30,'difficulty':'Easy','veg':1,'spice_level':'Low','ings':['rice','moong dal','cumin','turmeric','salt','ghee']},
+        {'name':'Masoor Dal with Rice','cuisine':'Pakistani','time_min':35,'difficulty':'Easy','veg':1,'spice_level':'Medium','ings':['rice','masoor dal','onion','tomato','garlic','ginger','cumin','turmeric','red chili','salt','oil']},
+        {'name':'Chana Dal Fry + Rice','cuisine':'Pakistani','time_min':40,'difficulty':'Medium','veg':1,'spice_level':'Medium','ings':['rice','chana dal','onion','tomato','garlic','ginger','cumin','turmeric','red chili','salt','oil']},
+        {'name':'Tarka Dal & Zeera Rice','cuisine':'Pakistani','time_min':40,'difficulty':'Medium','veg':1,'spice_level':'Medium','ings':['rice','dal','onion','garlic','ginger','cumin','green chili','ghee','salt']},
+        {'name':'Urad Dal Mash + Rice','cuisine':'Pakistani','time_min':45,'difficulty':'Medium','veg':1,'spice_level':'Medium','ings':['rice','urad dal','onion','tomato','garlic','ginger','cumin','red chili','salt','oil']}
+    ]
+    for d in catalog:
+        did = ensure_dish(d)
+        link_di(did, d['ings'])
+        execute('INSERT IGNORE INTO user_library (user_id,dish_id) VALUES (%s,%s)', (1, did))
+    return redirect(url_for('library'))
+
+
 
 @app.post('/override')
 def override_post():
-    raw = request.form.get('ingredients','')
-    tokens = normalize_tokens(raw)
-    matches = match_dishes(tokens)
-    return render_template('override_results.html', raw=raw, tokens=tokens, matches=matches)
+    raw = request.form.get('ingredients','').strip()
+    matches = match_dishes(raw)
+    web_results = []
+    if not matches:
+        web_results = web_find_recipes(raw)
+    return render_template('override_results.html', raw=raw, matches=matches, web_results=web_results)
+
+
+@app.post('/override/add')
+def override_add():
+    dish_id = int(request.form['dish_id'])
+    execute('INSERT IGNORE INTO user_library (user_id,dish_id) VALUES (%s,%s)', (1,dish_id))
+    return redirect(url_for('library'))
+
 
 @app.post('/override/confirm')
 def override_confirm():
@@ -214,7 +458,7 @@ def library_add():
         dish_id = row['id']
         execute('UPDATE dishes SET image_url=%s WHERE id=%s', (img, dish_id))
     execute('INSERT IGNORE INTO user_library (user_id,dish_id) VALUES (%s,%s)', (1,dish_id))
-    toks = normalize_tokens(ingredients)
+    toks = ingredient_terms_from_text(ingredients)
     for t in toks:
         ing = query('SELECT id FROM ingredients WHERE name=%s', (t,), one=True)
         iid = ing['id'] if ing else execute('INSERT INTO ingredients (name) VALUES (%s)', (t,))
@@ -366,25 +610,64 @@ def dish_image(dish_id):
 def pref_filter_sql(user_id=1):
     p = get_prefs(user_id)
     w, params = [], []
+
     tm = p.get('time_max')
     if tm:
         w.append('d.time_min<=%s'); params.append(int(tm))
+
     diet = (p.get('diet') or 'None')
     if diet in ('Veg','Vegan'):
         w.append('d.veg=1')
+
     spice = (p.get('spice_level') or 'Medium')
     if spice == 'Low':
         w.append("COALESCE(d.spice_level,'Medium') NOT IN ('High','Spicy')")
     elif spice == 'Medium':
         w.append("COALESCE(d.spice_level,'Medium') NOT IN ('Spicy')")
+
     avoid_tokens = []
-    for src in [p.get('allergies') or '', p.get('avoid') or '']:
-        avoid_tokens.extend(normalize_tokens(src))
+    for src in (p.get('allergies') or '', p.get('avoid') or ''):
+        r, o, x = normalize_tokens(src)
+        avoid_tokens.extend([t for t in (r + o + x) if t])
+
     if avoid_tokens:
-        placeholders = ','.join(['%s']*len(avoid_tokens))
-        w.append(f"d.id NOT IN (SELECT di.dish_id FROM dish_ingredients di JOIN ingredients i ON i.id=di.ingredient_id WHERE i.name IN ({placeholders}))")
+        placeholders = ','.join(['%s'] * len(avoid_tokens))
+        w.append(
+            f"d.id NOT IN (SELECT di.dish_id FROM dish_ingredients di "
+            f"JOIN ingredients i ON i.id=di.ingredient_id "
+            f"WHERE i.name IN ({placeholders}))"
+        )
         params.extend(avoid_tokens)
-    return (' AND ' + ' AND '.join(w)) if w else '', params
+
+    sql = (' AND ' + ' AND '.join(w)) if w else ''
+    return sql, params
+
+
+def ingredient_terms_from_text(s):
+    s = (s or '').lower().strip()
+    if not s: return []
+    parts = re.split(r'[,\+\|\-\/]+', s)
+    aliases = {
+        'chkn':'chicken','chikn':'chicken','chk':'chicken','murghi':'chicken',
+        'qeema':'keema','keema':'keema',
+        'aloo':'potato','bhindi':'okra','saag':'spinach','machli':'fish',
+        'dal':'dal','daal':'dal','dāl':'dal',
+        'masoor':'masoor dal','moong':'moong dal','chanadal':'chana dal','chana':'chana dal',
+        'mash':'urad dal','urad':'urad dal',
+        'chawal':'rice','chāwal':'rice'
+    }
+    out=[]
+    for p in parts:
+        t=p.strip()
+        if not t: continue
+        if t.endswith('s') and len(t)>3: t=t[:-1]
+        t=aliases.get(t,t)
+        out.append(t)
+    seen=set(); flat=[]
+    for t in out:
+        if t and t not in seen:
+            flat.append(t); seen.add(t)
+    return flat
 
 
 if __name__ == '__main__':
