@@ -3,10 +3,41 @@ from datetime import date, timedelta, datetime
 import csv, io, random
 import config
 from db import close_db, query, execute
+import os, uuid
+from PIL import Image
+
+
+UPLOAD_DIR = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
+os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = config.SECRET_KEY
 app.teardown_appcontext(close_db)
+
+
+def _center_crop_ratio(img, rw=16, rh=9):
+    w, h = img.size
+    tr = rw / rh
+    cr = w / h
+    if cr > tr:
+        nw = int(h * tr)
+        x = (w - nw) // 2
+        return img.crop((x, 0, x + nw, h))
+    nh = int(w / tr)
+    y = (h - nh) // 2
+    return img.crop((0, y, w, y + nh))
+
+
+def save_image(fileobj, w=1280, h=720):
+    img = Image.open(fileobj.stream)
+    if img.mode not in ('RGB', 'L'):
+        img = img.convert('RGB')
+    img = _center_crop_ratio(img, 16, 9).resize((w, h), Image.LANCZOS)
+    name = f"{uuid.uuid4().hex}.webp"
+    path = os.path.join(UPLOAD_DIR, name)
+    img.save(path, format='WEBP', quality=85, method=6)
+    return f"/static/uploads/{name}"
+
 
 @app.context_processor
 def url_helpers():
@@ -31,9 +62,12 @@ def get_cooldown_days(user_id=1):
 def pick_candidate(user_id=1):
     today = date.today()
     cd = get_cooldown_days(user_id)
-    rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id NOT IN (SELECT dish_id FROM day_plan WHERE user_id=%s AND date >= %s)', (user_id, user_id, today - timedelta(days=cd)))
+    pf_sql, pf_params = pref_filter_sql(user_id)
+    params = [user_id, user_id, today - timedelta(days=cd)] + pf_params
+    rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id NOT IN (SELECT dish_id FROM day_plan WHERE user_id=%s AND date >= %s)' + pf_sql, params)
     if not rows:
-        rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1', (user_id,))
+        params = [user_id] + pf_params
+        rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1' + pf_sql, params)
     if not rows:
         return None
     def score(r):
@@ -42,6 +76,7 @@ def pick_candidate(user_id=1):
         return base + random.random()
     rows.sort(key=score, reverse=True)
     return rows[0]
+
 
 def get_or_create_today_plan(user_id=1):
     today_d = date.today()
@@ -59,11 +94,15 @@ def get_or_create_today_plan(user_id=1):
 def alt_picks(exclude_id, user_id=1, limit=3):
     today = date.today()
     cd = get_cooldown_days(user_id)
-    rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id<>%s AND d.id NOT IN (SELECT dish_id FROM day_plan WHERE user_id=%s AND date>=%s)', (user_id, exclude_id, user_id, today - timedelta(days=cd)))
+    pf_sql, pf_params = pref_filter_sql(user_id)
+    params = [user_id, exclude_id, user_id, today - timedelta(days=cd)] + pf_params
+    rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id<>%s AND d.id NOT IN (SELECT dish_id FROM day_plan WHERE user_id=%s AND date>=%s)' + pf_sql, params)
     if not rows:
-        rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id<>%s', (user_id, exclude_id))
+        params = [user_id, exclude_id] + pf_params
+        rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id<>%s' + pf_sql, params)
     random.shuffle(rows)
     return rows[:limit]
+
 
 def days_ago(d):
     if not d:
@@ -160,22 +199,28 @@ def library_add():
     difficulty = request.form.get('difficulty','Easy')
     cuisine = request.form.get('cuisine','')
     spice = request.form.get('spice_level','Medium')
-    img = '/static/img/placeholder.jpg'
+    img_url_text = request.form.get('image_url','').strip()
+    img_file = request.files.get('image')
+    if img_file and img_file.filename:
+        img = save_image(img_file)
+    elif img_url_text:
+        img = img_url_text
+    else:
+        img = '/static/img/placeholder.jpg'
     row = query('SELECT id FROM dishes WHERE name=%s', (name,), one=True)
     if not row:
         dish_id = execute('INSERT INTO dishes (name,cuisine,time_min,difficulty,veg,spice_level,image_url) VALUES (%s,%s,%s,%s,%s,%s,%s)', (name,cuisine,time_min,difficulty,veg,spice,img))
     else:
         dish_id = row['id']
+        execute('UPDATE dishes SET image_url=%s WHERE id=%s', (img, dish_id))
     execute('INSERT IGNORE INTO user_library (user_id,dish_id) VALUES (%s,%s)', (1,dish_id))
     toks = normalize_tokens(ingredients)
     for t in toks:
         ing = query('SELECT id FROM ingredients WHERE name=%s', (t,), one=True)
-        if not ing:
-            iid = execute('INSERT INTO ingredients (name) VALUES (%s)', (t,))
-        else:
-            iid = ing['id']
+        iid = ing['id'] if ing else execute('INSERT INTO ingredients (name) VALUES (%s)', (t,))
         execute('INSERT IGNORE INTO dish_ingredients (dish_id,ingredient_id) VALUES (%s,%s)', (dish_id,iid))
     return redirect(url_for('library'))
+
 
 @app.get('/history')
 def history():
@@ -228,8 +273,10 @@ def history():
 
 @app.get('/discover')
 def discover():
-    picks = query('SELECT id,name,cuisine,time_min,difficulty,veg,spice_level,image_url FROM dishes ORDER BY RAND() LIMIT 6')
+    pf_sql, pf_params = pref_filter_sql(1)
+    picks = query('SELECT id,name,cuisine,time_min,difficulty,veg,spice_level,image_url FROM dishes d WHERE 1=1' + pf_sql + ' ORDER BY RAND() LIMIT 6', pf_params)
     return render_template('discover.html', picks=picks)
+
 
 @app.post('/discover/add')
 def discover_add():
@@ -300,6 +347,45 @@ def import_library():
             dish_id = d['id']
         execute('INSERT IGNORE INTO user_library (user_id,dish_id) VALUES (%s,%s)', (1,dish_id))
     return redirect(url_for('settings'))
+
+
+@app.post('/dish/<int:dish_id>/image')
+def dish_image(dish_id):
+    img_file = request.files.get('image')
+    img_url_text = request.form.get('image_url','').strip()
+    if img_file and img_file.filename:
+        url = save_image(img_file)
+    elif img_url_text:
+        url = img_url_text
+    else:
+        return redirect(url_for('library'))
+    execute('UPDATE dishes SET image_url=%s WHERE id=%s', (url, dish_id))
+    return redirect(url_for('library'))
+
+
+def pref_filter_sql(user_id=1):
+    p = get_prefs(user_id)
+    w, params = [], []
+    tm = p.get('time_max')
+    if tm:
+        w.append('d.time_min<=%s'); params.append(int(tm))
+    diet = (p.get('diet') or 'None')
+    if diet in ('Veg','Vegan'):
+        w.append('d.veg=1')
+    spice = (p.get('spice_level') or 'Medium')
+    if spice == 'Low':
+        w.append("COALESCE(d.spice_level,'Medium') NOT IN ('High','Spicy')")
+    elif spice == 'Medium':
+        w.append("COALESCE(d.spice_level,'Medium') NOT IN ('Spicy')")
+    avoid_tokens = []
+    for src in [p.get('allergies') or '', p.get('avoid') or '']:
+        avoid_tokens.extend(normalize_tokens(src))
+    if avoid_tokens:
+        placeholders = ','.join(['%s']*len(avoid_tokens))
+        w.append(f"d.id NOT IN (SELECT di.dish_id FROM dish_ingredients di JOIN ingredients i ON i.id=di.ingredient_id WHERE i.name IN ({placeholders}))")
+        params.extend(avoid_tokens)
+    return (' AND ' + ' AND '.join(w)) if w else '', params
+
 
 if __name__ == '__main__':
     app.run(debug=True)

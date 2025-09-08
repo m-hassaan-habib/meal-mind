@@ -9,7 +9,7 @@
     {% for p in picks %}
     <div class="rounded-2xl border bg-white p-4">
       <div class="h-28 bg-gradient-to-br from-emerald-50 to-amber-50 rounded-xl mb-3 flex items-center justify-center">
-        <span class="text-gray-400 text-2xl">🍽️</span>
+        <img src="{{ p.image_url or '/static/img/placeholder.jpg' }}" class="w-full h-28 object-cover rounded-xl mb-3">
       </div>
       <div class="font-semibold">{{ p.name }}</div>
       <div class="text-sm text-gray-500">{{ p.cuisine or '—' }} • {{ p.time_min or 0 }}m</div>
