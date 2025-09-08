@@ -8,11 +8,12 @@
   <script>
     tailwind.config = { theme: { extend: { colors: { brand: { DEFAULT: '#10b981' } } } } }
   </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='ui.css') }}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>body{font-family:Inter,ui-sans-serif,system-ui}</style>
 </head>
-<body class="bg-gray-50 min-h-screen">
+<body class="bg-gray-50 min-h-screen ui">
   <div class="mx-auto max-w-7xl px-4 py-4">
     <div class="flex items-center justify-between mb-4">
       <div class="text-2xl font-semibold">MealMind</div>

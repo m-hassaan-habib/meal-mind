@@ -32,7 +32,7 @@
         <input type="hidden" name="name" value="{{ p.name }}">
         <input type="hidden" name="ingredients" value="">
         <input type="hidden" name="time_min" value="{{ p.time_min or 40 }}">
-        <input type="hidden" name="cuisine" value="{{ p.cuisine or 'Pakistani' }}">
+        <input type="hidden" name="cuisine" value="{{ p.cuisine or '' }}">
         <input type="hidden" name="difficulty" value="{{ p.difficulty or 'Medium' }}">
         <input type="hidden" name="spice_level" value="Medium">
         <input type="hidden" name="veg" value="{{ p.veg or 0 }}">

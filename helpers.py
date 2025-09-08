@@ -6,6 +6,7 @@ from PIL import Image
 import re
 import requests
 import random
+from difflib import get_close_matches
 
 def _name_key(s):
     return re.sub(r'\s+', ' ', (s or '').strip().lower())
@@ -200,19 +201,54 @@ def alt_picks(exclude_id, user_id=1, limit=3):
     today = date.today()
     cd = get_cooldown_days(user_id)
     pf_sql, pf_params = pref_filter_sql(user_id)
-    params = [user_id, exclude_id, user_id, today - timedelta(days=cd)] + pf_params
-    rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id<>%s AND d.id NOT IN (SELECT dish_id FROM day_plan WHERE user_id=%s AND date>=%s)' + pf_sql, params)
-    if not rows:
-        params = [user_id, exclude_id] + pf_params
-        rows = query('SELECT d.*, ul.last_cooked_at FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1 AND d.id<>%s' + pf_sql, params)
-    random.shuffle(rows)
-    return rows[:limit]
 
+    base = ('SELECT d.id,d.name,d.cuisine,d.time_min,d.image_url,ul.last_cooked_at,ul.created_at '
+            'FROM user_library ul JOIN dishes d ON d.id=ul.dish_id '
+            'WHERE ul.user_id=%s AND ul.active=1 AND d.id<>%s ')
 
-def days_ago(d):
-    if not d:
-        return None
-    return (date.today() - d).days
+    sql_cd = (base + 'AND d.id NOT IN (SELECT dish_id FROM day_plan WHERE user_id=%s AND date>=%s) ' + pf_sql +
+              ' ORDER BY (ul.last_cooked_at IS NULL) DESC, '
+              'COALESCE(ul.last_cooked_at, "1970-01-01") ASC, '
+              'COALESCE(ul.created_at, "1970-01-01") DESC, '
+              'RAND() LIMIT %s')
+    rows = query(sql_cd, [user_id, exclude_id, user_id, today - timedelta(days=cd)] + pf_params + [limit*2])
+
+    if len(rows) < limit:
+        sql_loose = (base + pf_sql +
+                     ' ORDER BY (ul.last_cooked_at IS NULL) DESC, '
+                     'COALESCE(ul.last_cooked_at, "1970-01-01") ASC, '
+                     'COALESCE(ul.created_at, "1970-01-01") DESC, '
+                     'RAND() LIMIT %s')
+        rows = query(sql_loose, [user_id, exclude_id] + pf_params + [limit*2])
+
+    out, seen = [], set()
+    for r in rows:
+        if r['id'] in seen: 
+            continue
+        seen.add(r['id'])
+        out.append({
+            'id': r['id'],
+            'name': r['name'],
+            'cuisine': r['cuisine'],
+            'time_min': r['time_min'] or 0,
+            'image_url': r['image_url'],
+            'is_web': 0
+        })
+        if len(out) == limit:
+            break
+
+    if len(out) < limit:
+        for w in discover_candidates(user_id, limit - len(out)):
+            out.append({
+                'id': None,
+                'name': w['name'],
+                'cuisine': w.get('cuisine'),
+                'time_min': w.get('time_min') or 0,
+                'image_url': w.get('image_url'),
+                'is_web': 1,
+                'df_id': w['id']
+            })
+    return out
 
 
 def normalize_tokens(s):
@@ -465,27 +501,118 @@ def ensure_weekly_discover(user_id=1, total=8, lib_target=4, web_target=4):
         rank += 1
 
 
-def web_weekly_candidates(user_id=1, limit=5):
-    seeds = ['biryani','karahi','dal','khichdi','korma','sabzi','kebab','pulao','haleem','nihari']
-    names = {r['name'].strip().lower()
-             for r in query('SELECT d.name FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1', (user_id,))}
-    pool = []
-    random.shuffle(seeds)
-    for s in seeds[:3]:
-        res = web_find_recipes(s)
-        for m in res:
-            n = (m.get('name') or '').strip().lower()
-            if not n or n in names: 
-                continue
-            pool.append(m)
+def previously_seen_names(user_id=1):
+    rows = query('SELECT LOWER(TRIM(COALESCE(name,""))) n FROM discover_feed WHERE user_id=%s AND name IS NOT NULL', (user_id,))
+    return {r['n'] for r in rows}
+
+
+def web_weekly_candidates(user_id=1, limit=12):
+    lib_names = {(r['name'] or '').strip().lower() for r in query('SELECT d.name FROM user_library ul JOIN dishes d ON d.id=ul.dish_id WHERE ul.user_id=%s AND ul.active=1', (user_id,))}
+    ws = week_start()
+    curr_names = {(r['name'] or '').strip().lower() for r in query('SELECT name FROM discover_feed WHERE user_id=%s AND week_start=%s AND source=%s', (user_id, ws, 'web'))}
+    pool = web_area_list('Pakistani', 60) + web_area_list('Indian', 60)
     out, seen = [], set()
     random.shuffle(pool)
     for m in pool:
-        k = (m.get('name') or '').strip().lower()
-        if k in seen: 
+        n = (m.get('name') or '').strip().lower()
+        if not n or n in lib_names or n in curr_names or n in seen:
             continue
-        seen.add(k)
+        seen.add(n)
         out.append(m)
         if len(out) >= limit:
             break
     return out
+
+
+def ensure_weekly_web_discover(user_id=1, total=12):
+    ws = week_start()
+    execute('DELETE FROM discover_feed WHERE user_id=%s AND week_start=%s AND source=%s', (user_id, ws, 'web'))
+    items = web_weekly_candidates(user_id, total)
+    rnk = 1
+    for w in items:
+        execute(
+            'INSERT INTO discover_feed (user_id,week_start,source,sort_rank,name,image_url,source_url,time_min,cuisine,difficulty,veg) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+            (user_id, ws, 'web', rnk, w.get('name'), w.get('image_url'), w.get('source_url',''), w.get('time_min'), w.get('cuisine'), w.get('difficulty'), int(w.get('veg',0)))
+        )
+        rnk += 1
+
+
+def ensure_web_dish_into_library(payload, user_id=1):
+    name = (payload.get('name') or '').strip()
+    if not name:
+        return None
+    row = query('SELECT id FROM dishes WHERE name=%s', (name,), one=True)
+    if row:
+        did = row['id']
+        execute('INSERT IGNORE INTO user_library (user_id,dish_id) VALUES (%s,%s)', (user_id, did))
+        if payload.get('image_url'):
+            execute('UPDATE dishes SET image_url=CASE WHEN COALESCE(image_url,"")="" THEN %s ELSE image_url END WHERE id=%s', (payload.get('image_url'), did))
+        return did
+    time_min = int(payload.get('time_min') or 40)
+    cuisine = payload.get('cuisine') or 'Pakistani'
+    difficulty = payload.get('difficulty') or 'Medium'
+    veg = int(payload.get('veg') or 0)
+    spice = payload.get('spice_level') or 'Medium'
+    image_url = payload.get('image_url') or '/static/img/placeholder.jpg'
+    did = execute('INSERT INTO dishes (name,cuisine,time_min,difficulty,veg,spice_level,image_url) VALUES (%s,%s,%s,%s,%s,%s,%s)', (name,cuisine,time_min,difficulty,veg,spice,image_url))
+    execute('INSERT IGNORE INTO user_library (user_id,dish_id) VALUES (%s,%s)', (user_id, did))
+    return did
+
+
+def ensure_materialized_feed(user_id=1):
+    ws = week_start()
+    rows = query('SELECT id,name,image_url,source_url,time_min,cuisine,difficulty,veg FROM discover_feed WHERE user_id=%s AND week_start=%s AND source=%s AND (dish_id IS NULL OR dish_id=0)', (user_id, ws, 'web'))
+    for r in rows:
+        did = ensure_web_dish_into_library(r, user_id)
+        if did:
+            execute('UPDATE discover_feed SET dish_id=%s WHERE id=%s', (did, r['id']))
+
+
+def discover_candidates(user_id=1, limit=3):
+    ws = week_start()
+    rows = query(
+        'SELECT id,name,image_url,source_url,time_min,cuisine,difficulty,veg '
+        'FROM discover_feed WHERE user_id=%s AND week_start=%s AND source=%s '
+        'AND (dish_id IS NULL OR dish_id=0) ORDER BY sort_rank ASC, id ASC LIMIT %s',
+        (user_id, ws, 'web', limit)
+    )
+    return rows
+
+
+def materialize_discover(df_id, user_id=1):
+    r = query('SELECT id,name,image_url,source_url,time_min,cuisine,difficulty,veg FROM discover_feed WHERE id=%s AND user_id=%s', (df_id, user_id), one=True)
+    if not r: return None
+    did = ensure_web_dish_into_library(r, user_id)
+    if did:
+        execute('UPDATE discover_feed SET dish_id=%s WHERE id=%s', (did, df_id))
+    return did
+
+
+def days_ago(d):
+    if not d:
+        return None
+    if isinstance(d, datetime):
+        d = d.date()
+    return (date.today() - d).days
+
+
+def web_area_list(area, limit=60):
+    try:
+        r = requests.get('https://www.themealdb.com/api/json/v1/1/filter.php', params={'a': area}, timeout=6)
+        j = r.json() if r.status_code == 200 else {}
+        meals = j.get('meals') or []
+    except Exception:
+        meals = []
+    out = []
+    for m in meals:
+        out.append({
+            'name': m.get('strMeal'),
+            'image_url': m.get('strMealThumb'),
+            'source_url': f"https://www.themealdb.com/meal/{m.get('idMeal')}",
+            'time_min': 40,
+            'cuisine': area,
+            'difficulty': 'Medium',
+            'veg': 0
+        })
+    random.shuffle(out)
+    return out[:limit]

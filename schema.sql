@@ -105,3 +105,6 @@ CREATE INDEX idx_day_plan_dish ON day_plan (dish_id);
 
 ALTER TABLE dishes ADD INDEX idx_dishes_name (name);
 ALTER TABLE dish_ingredients ADD INDEX idx_di_ingredient (ingredient_id);
+ALTER TABLE user_library ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+
+ALTER TABLE discover_feed ADD UNIQUE KEY uq_user_week_name (user_id, week_start, name);

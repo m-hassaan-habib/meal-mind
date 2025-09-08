@@ -63,18 +63,29 @@
   <div class="lg:col-span-1">
     <div class="rounded-2xl border bg-white p-4">
       <div class="font-semibold mb-2">Alternatives</div>
-      <div id="altList" class="space-y-3">
-        {% for a in alts %}
-        <div class="border rounded-xl p-3">
-          <div class="font-medium">{{ a.name }}</div>
-          <div class="text-sm text-gray-500">{{ a.cuisine or '—' }} • {{ a.time_min or 0 }}m</div>
-          <form method="post" action="{{ url_for('cook') }}" class="mt-2">
-            <input type="hidden" name="dish_id" value="{{ a.id }}">
-            <button class="w-full border rounded-lg py-2">Choose</button>
-          </form>
+        <div id="altList" class="space-y-3">
+          {% for a in alts %}
+          {% if a.is_web %}
+          <div class="border rounded-xl p-3">
+            <div class="font-medium">{{ a.name }}</div>
+            <div class="text-sm text-gray-500">{{ a.cuisine or '—' }} • {{ a.time_min or 0 }}m</div>
+            <form method="post" action="{{ url_for('discover_import_cook') }}" class="mt-2">
+              <input type="hidden" name="df_id" value="{{ a.df_id }}">
+              <button class="w-full border rounded-lg py-2">Import & Choose</button>
+            </form>
+          </div>
+          {% else %}
+          <div class="border rounded-xl p-3">
+            <div class="font-medium">{{ a.name }}</div>
+            <div class="text-sm text-gray-500">{{ a.cuisine or '—' }} • {{ a.time_min or 0 }}m</div>
+            <form method="post" action="{{ url_for('cook') }}" class="mt-2">
+              <input type="hidden" name="dish_id" value="{{ a.id }}">
+              <button class="w-full border rounded-lg py-2">Choose</button>
+            </form>
+          </div>
+          {% endif %}
+          {% endfor %}
         </div>
-        {% endfor %}
-      </div>
     </div>
     <div class="rounded-2xl border bg-amber-50 text-amber-900 p-4 mt-4">
       <div class="font-medium">Keep variety high</div>
@@ -84,7 +95,7 @@
 </div>
 <script>
   const btn=document.getElementById('swapBtn')
-  if(btn){btn.addEventListener('click',async()=>{const id=btn.dataset.id;const r=await fetch('/swap',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'dish_id='+id});if(!r.ok)return;const alts=await r.json();const c=document.getElementById('altList');c.innerHTML='';alts.forEach(a=>{c.innerHTML+=`<div class="border rounded-xl p-3"><div class="font-medium">${a.name}</div><div class="text-sm text-gray-500">${a.cuisine||'—'} • ${a.time_min||0}m</div><form method="post" action="/cook" class="mt-2"><input type="hidden" name="dish_id" value="${a.id}"><button class="w-full border rounded-lg py-2">Choose</button></form></div>`})})}
+  if(btn){btn.addEventListener('click',async()=>{const id=btn.dataset.id;const r=await fetch('/swap',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'dish_id='+id});if(!r.ok)return;const alts=await r.json();const c=document.getElementById('altList');c.innerHTML='';alts.forEach(a=>{if(a.is_web){c.innerHTML+=`<div class="border rounded-xl p-3"><div class="font-medium">${a.name}</div><div class="text-sm text-gray-500">${a.cuisine||'—'} • ${a.time_min||0}m</div><form method="post" action="/discover/import_cook" class="mt-2"><input type="hidden" name="df_id" value="${a.df_id}"><button class="w-full border rounded-lg py-2">Import & Choose</button></form></div>`}else{c.innerHTML+=`<div class="border rounded-xl p-3"><div class="font-medium">${a.name}</div><div class="text-sm text-gray-500">${a.cuisine||'—'} • ${a.time_min||0}m</div><form method="post" action="/cook" class="mt-2"><input type="hidden" name="dish_id" value="${a.id}"><button class="w-full border rounded-lg py-2">Choose</button></form></div>`}})})}
   const ROTATE={{ rotate_seconds or 0 }}
   function daysFrom(iso){if(!iso)return null;const d=new Date(iso);const t=new Date();return Math.floor((t-d)/86400000)}
   async function refreshPick(){const r=await fetch('/api/pick?force=1');if(!r.ok)return;const p=await r.json();document.getElementById('pickImage').src=p.image_url||'/static/img/placeholder.jpg';document.getElementById('pickName').textContent=p.name;document.getElementById('pickMeta').textContent=(p.cuisine||'—')+' • '+(p.difficulty||'—');document.getElementById('timeMin').textContent=(p.time_min||0)+'m';const lc=daysFrom(p.last_cooked_at);const lcEl=document.getElementById('lastCooked');if(lc!==null&&!Number.isNaN(lc)){lcEl.textContent='Last cooked '+lc+'d ago';lcEl.classList.remove('hidden')}else{lcEl.classList.add('hidden')}const spicy=document.getElementById('spicyPill');if(p.spice_level==='High'||p.spice_level==='Spicy'){spicy.classList.remove('hidden')}else{spicy.classList.add('hidden')}const cp=document.getElementById('cuisinePill');if(p.cuisine){cp.textContent=p.cuisine;cp.classList.remove('hidden')}else{cp.classList.add('hidden')}document.getElementById('cookDishId').value=p.id;const sbtn=document.getElementById('swapBtn');if(sbtn){sbtn.dataset.id=p.id;const rr=await fetch('/swap',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'dish_id='+p.id});if(rr.ok){const alts=await rr.json();const c=document.getElementById('altList');c.innerHTML='';alts.forEach(a=>{c.innerHTML+=`<div class="border rounded-xl p-3"><div class="font-medium">${a.name}</div><div class="text-sm text-gray-500">${a.cuisine||'—'} • ${a.time_min||0}m</div><form method="post" action="/cook" class="mt-2"><input type="hidden" name="dish_id" value="${a.id}"><button class="w-full border rounded-lg py-2">Choose</button></form></div>`})}}}
