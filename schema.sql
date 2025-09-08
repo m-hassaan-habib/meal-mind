@@ -85,3 +85,7 @@ ALTER TABLE preferences ADD COLUMN theme VARCHAR(10) DEFAULT 'light';
 
 CREATE INDEX idx_day_plan_user_date ON day_plan (user_id, date);
 CREATE INDEX idx_day_plan_dish ON day_plan (dish_id);
+
+
+ALTER TABLE dishes ADD INDEX idx_dishes_name (name);
+ALTER TABLE dish_ingredients ADD INDEX idx_di_ingredient (ingredient_id);

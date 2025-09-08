@@ -27,7 +27,7 @@
     {% for r in rows %}
     <div class="rounded-2xl border bg-white p-4 flex items-center justify-between">
       <div class="flex items-center gap-4">
-        <div class="h-16 w-24 rounded-lg bg-emerald-50 flex items-center justify-center">🍽️</div>
+        <img src="{{ r.image_url or '/static/img/placeholder.jpg' }}" class="h-16 w-24 rounded-lg object-cover">
         <div>
           <div class="font-semibold">{{ r.name }}</div>
           <div class="text-sm text-gray-500">{{ r.cuisine or '—' }} • {{ r.time_min or 0 }}m</div>

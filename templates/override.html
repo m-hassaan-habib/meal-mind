@@ -4,9 +4,10 @@
   <div class="rounded-2xl border bg-white p-6">
     <div class="text-xl font-semibold mb-2">Override by Ingredients</div>
     <form method="post" action="{{ url_for('override_post') }}" class="flex gap-2">
-      <input name="ingredients" placeholder="rice + chicken" class="flex-1 rounded-xl border px-4 py-3" value="">
+      <input name="ingredients" placeholder="rice + chicken -peas | potato" class="flex-1 rounded-xl border px-4 py-3" value="">
       <button class="rounded-xl bg-emerald-600 text-white px-5">Search</button>
     </form>
+    <div class="text-xs text-gray-500 mt-2">+ AND, | OR, - NOT. Typo tolerant.</div>
   </div>
 </div>
 {% endblock %}

@@ -10,17 +10,21 @@
   </form>
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     {% for d in rows %}
-    <div class="rounded-2xl border bg-white p-4">
-      <div class="h-28 bg-gradient-to-br from-emerald-50 to-amber-50 rounded-xl mb-3 flex items-center justify-center">
-        <span class="text-gray-400 text-2xl">👨‍🍳</span>
+      <div class="rounded-2xl border bg-white p-4 relative">
+        <img src="{{ d.image_url or '/static/img/placeholder.jpg' }}" class="w-full h-28 object-cover rounded-xl mb-3">
+        <form method="post" action="{{ url_for('dish_image', dish_id=d.id) }}" enctype="multipart/form-data" class="absolute top-3 right-3">
+          <label class="px-2 py-1 bg-white/80 backdrop-blur rounded-lg text-xs cursor-pointer border">
+            Change
+            <input type="file" name="image" accept="image/*" class="hidden" onchange="this.form.submit()">
+          </label>
+        </form>
+        <div class="font-semibold">{{ d.name }}</div>
+        <div class="text-sm text-gray-500">{{ d.cuisine or '—' }}</div>
+        <div class="flex items-center gap-3 text-sm text-gray-600 mt-2">
+          <span>{{ d.time_min or 0 }}m</span>
+          {% if days_ago(d.last_cooked_at) is not none %}<span>{{ days_ago(d.last_cooked_at) }}d ago</span>{% endif %}
+        </div>
       </div>
-      <div class="font-semibold">{{ d.name }}</div>
-      <div class="text-sm text-gray-500">{{ d.cuisine or '—' }}</div>
-      <div class="flex items-center gap-3 text-sm text-gray-600 mt-2">
-        <span class="inline-flex items-center gap-1">{{ d.time_min or 0 }}m</span>
-        {% if days_ago(d.last_cooked_at) is not none %}<span>{{ days_ago(d.last_cooked_at) }}d ago</span>{% endif %}
-      </div>
-    </div>
     {% endfor %}
   </div>
 </div>
@@ -30,7 +34,7 @@
   <div class="absolute inset-0 bg-black/40"></div>
   <div class="absolute inset-0 flex items-center justify-center p-4">
     <div class="w-full max-w-lg bg-white rounded-2xl p-5 max-h-[80vh] overflow-auto">
-      <form method="post" action="{{ url_for('library_add') }}" class="space-y-3">
+      <form method="post" action="{{ url_for('library_add') }}" enctype="multipart/form-data" class="space-y-3">
         <div class="text-lg font-semibold">Add Dish</div>
         <input name="name" placeholder="Dish name" class="w-full rounded-xl border px-4 py-3">
         <input name="ingredients" placeholder="Ingredients (rice + chicken)" class="w-full rounded-xl border px-4 py-3">
@@ -43,6 +47,8 @@
           <select name="spice_level" class="rounded-xl border px-4 py-3"><option>Low</option><option>Medium</option><option>High</option><option>Spicy</option></select>
         </div>
         <div class="flex items-center gap-2"><input type="checkbox" name="veg" value="1" id="veg"><label for="veg">Vegetarian</label></div>
+        <input type="file" name="image" accept="image/*" class="w-full rounded-xl border px-4 py-3">
+        <input type="url" name="image_url" placeholder="Image URL (optional)" class="w-full rounded-xl border px-4 py-3">
         <div class="flex justify-end gap-3 pt-2">
           <label for="addDish" class="px-4 py-2 rounded-lg border">Cancel</label>
           <button class="px-4 py-2 rounded-lg bg-emerald-600 text-white">Save</button>
